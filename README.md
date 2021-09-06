@@ -6,14 +6,17 @@
   </summary>
 
 1. jwt.service.spec.ts
+
 ![](https://i.ibb.co/rv2KVw7/jwttest.png)
 - 셋 중 제일 간단한 jwt.service 테스트 파일을 보겠습니다. jwt, users.service, podcast.service 모든 파트들이 마찬가지이지만 먼저 유닛 테스트 할 대상과 흉내내기할 대상을 고려해야 합니다. jwt service같은 경우에는 jsonwebtoken 패키지 이외에는 달리 mocking 할 것이 없습니다. 그래서 위와 같이 설정을 해주시면 테스트 준비가 끝입니다. jwt service가 제대로 준비 되었는지 확인하시려면 it('should be defined',()=>{ expect(service).toBeDefined();}); 이 코드를 이용하시면 되겠습니다.
 - 사실 jwt.service는 테스트 할 것이 별로 없습니다. jwt.service의 메소드도 sign, verify 밖에 없고 심지어 로직도 그냥 jsonwebtoken 패키지 wrapper 수준으로 그냥 리턴 값만 가지고 있어 별 로직이 없습니다. 그래서 테스트도 단순합니다.
+
 ![](https://i.ibb.co/s6grdRD/jwtsign.png)
 - 위 코드를 보면 jest.mock('jsonwebtoken', () => ...) 이 블럭은 jsonwebtoken 패키지를 mocking하는 것입니다. 유닛테스트이기 때문에 jwt service 자체에만 집중해야 하기 때문에 이러한 영향을 줄 수 있는 패키지나 함수, 클래스들은 mocking하여 테스트의 도구로 이용합니다.
 - 밑에 expect(jwt.sign).toHaveBeenCalledTimes(1);은 jwt.sign이 단 한 번 호출 되는지 테스트로 확인하는 것입니다. expect와 실제와 다르면 테스트는 실패하고, 코드 또는 로직에 문제가 있다. 그렇게 판단할 수 있습니다. 이러한 패턴으로 계속 나오니, 아 이렇게 테스트하는구나 정도로 이해하고 넘어가시면 되겠습니다.
 - describe, it를 적절히 잘 사용하면 테스트 코드 가독성이 높아집니다. describe은 테스트할 대상에 대해 설명을 해놓는 것이라 생각하시면 될 듯하구, it(individual test), 그 대상을 개별적으로 테스트 하는 것을 의미합니다. describe에서 jwt sign method에 대해서 테스트 합니다. 라고 누구나 쉽게 이해할 수 있고, it에서 이 테스트에서는 MOCKED_TOKEN을 꼭 리턴해줘 합니다.. 라는 테스트 목적을 쉽게 알 수 있습니다.
 2. users.service.spec.ts
+
 ![](https://i.ibb.co/J5690JQ/user-service.png)
 - jwt.service 테스트 파일에 비하여 설정이 복잡합니다. 먼저 user service만 테스트해야 하는데, repository도 연결되어 있고, user 로그인 처리할 때 사용하는 jwt service도 연결되어 있습니다. user service에 집중해야 하는 단위 테스트이므로, 이것들은 mocking을 해야 합니다. jwtService는 jwt.service와 마찬가지로 여기서도 다시 mocking을 해주고, repository는 약간 생소하지만 위의 코드와 같이 설정을 해줍니다.
 - beforeAll? beforeEach?
@@ -23,6 +26,7 @@
 - test
 - user나 podcast의 테스트는 jwt와는 비교도 안되게 양이 많습니다. 먼저 users.service의 createAccount를 살펴 보겠습니다.
 - createAccount의 모든 부분에 대해서 테스트를 하려면, 아래 그림처럼 고려를 해야 할 것입니다.
+
 ![](https://i.ibb.co/dffkTBr/create-account.png)
 - 1의 경우 - 이미 존재하는 이메일이 있을 경우에는 creatAccount가 실패해야 합니다.
 - 2의 경우 - 정상적으로 계정이 만들어져야 하는 경우입니다.
@@ -40,6 +44,7 @@
 3. const result = await service.createAccount(hostArgs);
 - createAccount가 호출되었습니다. 우리가 설정해 놓은 값에 의하면 위 코드는 findOne을 호출해서 이미 존재하는 이메일 계정이 없음을 확인하고 create 메소드를 호출해서 entity를 만들고, save 메소드를 호출해서 db에 엔티티를 저장하는 로직으로 흘러 갈 것입니다.
 - 우리가 만든 createAccount가 위의 로직대로 흘러간다고 기대하였으므로, 실제로 그렇게 호출이 되었나 확인만 해주면 테스트를 성공적으로 한 것입니다.
+
 - ![](https://i.ibb.co/6RSRGpy/success-test.png)
 - 위의 로직대로 findOne이 호출되었는가(toHaveBeenCalledTimes), 파라미터는 제대로 입력 되었는가(toHaveBeenCalledWith), create는 제대로 호출되었는가, save는 제대로 호출되었고, 결과가 우리가 원하는 값(toMatchObject)이 나오는가?를 jest에서 판단을 해주기 때문에 createAccount가 정상적으로 작동하는 경우 테스트가 끝난 것입니다.
 - createAccount를 모두 테스트하려면, 앞에서 언급드린 대로, 이미 이메일 계정이 이미 있는 경우와, save 메소드가 실패할 경우를 모두 테스트해야 full coverage를 완성할 수 있습니다.
@@ -67,7 +72,7 @@
   </summary>
 
 - e2e테스트 확인은 npm run test:e2e입니다.
-- e2e테스트 어떤 개념, 의미인지 확인하시고 챌린지 시작하시길 바랍니다.(참고 링크: e2e test)
+- e2e테스트 어떤 개념, 의미인지 확인하시고 챌린지 시작하시길 바랍니다.(참고 링크: [e2e test](https://docs.nestjs.kr/fundamentals/testing#end-to-end-testing])
 - it.todo를 describe으로 바꾸고 테스트 작성하시면 됩니다.
 - repository는 podcastRepository = module.get<Repository<Podcast>>(getRepositoryToken(Podcast)); 이런식으로 초기화 시켜주시면 됩니다.
 - string을 쿼리문에 넣으실 때 "" 큰 따옴표 넣는 것을 까먹으시면 안됩니다.
