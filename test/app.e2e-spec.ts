@@ -5,6 +5,7 @@ import { INestApplication } from '@nestjs/common';
 import { getConnection, Repository } from 'typeorm';
 import { Podcast } from 'src/podcast/entities/podcast.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { UserRole } from 'src/users/entities/user.entity';
 
 const GRAPHQL_ENDPOINT = '/graphql';
 
@@ -18,10 +19,19 @@ const testEpisode = {
   category: 'initialize',
 };
 
-function requestGraphql(app, query) {
-  return request(app.getHttpServer()).post(GRAPHQL_ENDPOINT).send({
-    query,
-  });
+const testUser = {
+  email: 'test@email.com',
+  password: 'testpassword',
+  role: UserRole.Host,
+};
+
+function requestGraphql(app: INestApplication, query: string, token = '') {
+  return request(app.getHttpServer())
+    .post(GRAPHQL_ENDPOINT)
+    .set('x-jwt', token)
+    .send({
+      query,
+    });
 }
 
 describe('App (e2e)', () => {
@@ -492,13 +502,116 @@ describe('App (e2e)', () => {
     });
   });
   describe('Users Resolver', () => {
-    describe('me', () => {});
+    let jwtToken;
+    describe('createAccount', () => {
+      const createAccountQuery = ({ email, password, role }) => `
+        mutation {
+          createAccount(input: { email: "${email}", password: "${password}", role: ${role} }) {
+            ok
+            error
+          }
+        }
+      `;
+
+      it('should create account', () => {
+        return requestGraphql(app, createAccountQuery(testUser))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                createAccount: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should fail if email is duplicated', () => {
+        return requestGraphql(app, createAccountQuery(testUser))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                createAccount: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeFalsy();
+            expect(error).toBe('There is a user with that email already');
+          });
+      });
+    });
+
+    describe('login', () => {
+      const loginQuery = ({ email, password }) => `
+        mutation {
+          login(input: { email: "${email}", password: "${password}" }) {
+            ok
+            error
+            token
+          }
+        }      
+      `;
+
+      it('should success login', () => {
+        return requestGraphql(app, loginQuery(testUser))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                login: { ok, error, token },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+            expect(token).not.toBeNull();
+
+            jwtToken = token;
+          });
+      });
+
+      it('should fail if password is incorrect', () => {
+        const wrongPassword = 'wrongPassword';
+
+        return requestGraphql(
+          app,
+          loginQuery({ email: testUser.email, password: wrongPassword }),
+        )
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                login: { ok, error, token },
+              },
+            } = res.body;
+
+            expect(ok).toBeFalsy();
+            expect(error).toBe('Wrong password');
+            expect(token).toBeNull();
+          });
+      });
+    });
+
+    describe('me', () => {
+      const meQuery = `
+        {
+          me {
+            id
+            email
+            role
+          }
+        }    
+      `;
+
+      it('should return my profile', () => {
+        return;
+      });
+    });
 
     describe('seeProfile', () => {});
-
-    describe('createAccount', () => {});
-
-    describe('login', () => {});
 
     describe('editProfile', () => {});
   });
