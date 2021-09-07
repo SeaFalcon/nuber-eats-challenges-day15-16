@@ -502,6 +502,7 @@ describe('App (e2e)', () => {
     });
   });
   describe('Users Resolver', () => {
+    let userId;
     let jwtToken;
     describe('createAccount', () => {
       const createAccountQuery = ({ email, password, role }) => `
@@ -603,16 +604,132 @@ describe('App (e2e)', () => {
             email
             role
           }
-        }    
+        }
       `;
 
       it('should return my profile', () => {
-        return;
+        return requestGraphql(app, meQuery, jwtToken)
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                me: { id, email, role },
+              },
+            } = res.body;
+
+            expect(email).toBe(testUser.email);
+            expect(role).toBe(testUser.role);
+            userId = id;
+          });
       });
     });
 
-    describe('seeProfile', () => {});
+    describe('seeProfile', () => {
+      const seeProfileQuery = (id: number) => `
+        {
+          seeProfile(userId: ${id}){
+            ok
+            error
+            user {
+              id
+              email
+              role
+            }
+          }
+        }
+      `;
 
-    describe('editProfile', () => {});
+      it('should see user profile', () => {
+        return requestGraphql(app, seeProfileQuery(userId), jwtToken)
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                seeProfile: {
+                  ok,
+                  error,
+                  user: { id, email, role },
+                },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+
+            expect(id).toBe(userId);
+            expect(email).toBe(testUser.email);
+            expect(role).toBe(testUser.role);
+          });
+      });
+
+      it('should fail if jwt is not provided', () => {
+        return requestGraphql(app, seeProfileQuery(userId))
+          .expect(200)
+          .expect(res => {
+            const { errors } = res.body;
+
+            const [error] = errors;
+
+            expect(error.message).toBe('Forbidden resource');
+          });
+      });
+    });
+
+    describe('editProfile', () => {
+      const editProfileArgs = {
+        email: 'new@email.com',
+        password: 'newPassword',
+      };
+
+      const emailQuery = email => `email: "${email}"`;
+      const passwordQuery = password => `password: "${password}"`;
+
+      const editProfileQuery = query => `
+        mutation {
+          editProfile(input: { ${query} }) {
+            ok
+            error
+          }
+        }
+      `;
+
+      it('should edit user email', () => {
+        return requestGraphql(
+          app,
+          editProfileQuery(emailQuery(editProfileArgs.email)),
+          jwtToken,
+        )
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                editProfile: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should edit user password', () => {
+        return requestGraphql(
+          app,
+          editProfileQuery(passwordQuery(editProfileArgs.password)),
+          jwtToken,
+        )
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                editProfile: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+    });
   });
 });
