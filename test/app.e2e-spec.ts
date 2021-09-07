@@ -17,6 +17,13 @@ const testEpisode = {
   title: 'app.module',
   category: 'initialize',
 };
+
+function requestGraphql(app, query) {
+  return request(app.getHttpServer()).post(GRAPHQL_ENDPOINT).send({
+    query,
+  });
+}
+
 describe('App (e2e)', () => {
   let app: INestApplication;
   let podcastsRepository: Repository<Podcast>;
@@ -38,23 +45,57 @@ describe('App (e2e)', () => {
   });
 
   describe('Podcasts Resolver', () => {
+    let insertPodcastId;
+    let insertEpisodeId;
+
+    const getPodcastQuery = (id: number) => `
+      {
+        getPodcast(input: { id: ${id} }) {
+          ok
+          error
+          podcast {
+            id
+            title
+            category
+            episodes {
+              id
+              title
+              category
+            }
+          }
+        }
+      }
+    `;
+
+    const getEpisodesQuery = (id: number) => `
+        {
+          getEpisodes(input: { id: ${id} }) {
+            ok
+            error
+            episodes {
+              id
+              title
+              category
+            }
+          }
+        }
+      `;
     describe('createPodcast', () => {
       it('should create podcast', () => {
-        return request(app.getHttpServer())
-          .post(GRAPHQL_ENDPOINT)
-          .send({
-            query: `
-            mutation {
-              createPodcast(input: {
-                title: "${testPodcast.title}"
-                category: "${testPodcast.category}"
-              }){
-                ok
-                error
-                id
-              }
-            }`,
-          })
+        const createPodcastQuery = `
+          mutation {
+            createPodcast(input: {
+              title: "${testPodcast.title}"
+              category: "${testPodcast.category}"
+            }){
+              ok
+              error
+              id
+            }
+          }
+        `;
+
+        return requestGraphql(app, createPodcastQuery)
           .expect(200)
           .expect(res => {
             const {
@@ -66,27 +107,28 @@ describe('App (e2e)', () => {
             } = res;
 
             expect(id).toBe(1);
+            insertPodcastId = id;
+
             expect(ok).toBeTruthy();
             expect(error).toBeNull();
           });
       });
 
       it('should fail if podcast input value is wrong', () => {
-        return request(app.getHttpServer())
-          .post(GRAPHQL_ENDPOINT)
-          .send({
-            query: `
-            mutation {
-              createPodcast(input: {
-                title: 1
-                category: "${testPodcast.category}"
-              }){
-                ok
-                error
-                id
-              }
-            }`,
-          })
+        const createPodcastQuery = `
+          mutation {
+            createPodcast(input: {
+              title: 1
+              category: "${testPodcast.category}"
+            }){
+              ok
+              error
+              id
+            }
+          }
+        `;
+
+        return requestGraphql(app, createPodcastQuery)
           .expect(400)
           .expect(res => {
             const {
@@ -103,23 +145,22 @@ describe('App (e2e)', () => {
     });
 
     describe('getAllPodcasts', () => {
+      const getAllPodcastsQuery = `
+        {
+          getAllPodcasts {
+            ok
+            error
+            podcasts {
+              id
+              title
+              category
+            }
+          }
+        }
+      `;
+
       it('should return all podcasts', () => {
-        return request(app.getHttpServer())
-          .post(GRAPHQL_ENDPOINT)
-          .send({
-            query: `
-            {
-              getAllPodcasts {
-                ok
-                error
-                podcasts {
-                  id
-                  title
-                  category
-                }
-              }
-            }`,
-          })
+        return requestGraphql(app, getAllPodcastsQuery)
           .expect(200)
           .expect(res => {
             const {
@@ -137,20 +178,328 @@ describe('App (e2e)', () => {
       });
     });
 
-    it.todo('getPodcast');
-    it.todo('updatePodcast');
-    it.todo('deletePodcast');
+    describe('getPodcast', () => {
+      it('should return a podcast', () => {
+        return requestGraphql(app, getPodcastQuery(insertPodcastId))
+          .expect(200)
+          .expect(req => {
+            const {
+              data: {
+                getPodcast: { ok, error, podcast },
+              },
+            } = req.body;
 
-    it.todo('createEpisode');
-    it.todo('getEpisodes');
-    it.todo('updateEpisode');
-    it.todo('deleteEpisode');
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+            expect(podcast).toMatchObject(testPodcast);
+          });
+      });
+
+      it('should fail if podcast id is wrong', () => {
+        const wrongId = 2;
+
+        return requestGraphql(app, getPodcastQuery(wrongId))
+          .expect(200)
+          .expect(req => {
+            const {
+              data: {
+                getPodcast: { ok, error },
+              },
+            } = req.body;
+
+            expect(ok).toBeFalsy();
+            expect(error).toBe(`Podcast with id ${wrongId} not found`);
+          });
+      });
+    });
+
+    describe('updatePodcast', () => {
+      const newTitle = 'newPodcast';
+
+      beforeAll(async () => {
+        const [podcast] = await podcastsRepository.find();
+        insertPodcastId = podcast.id;
+      });
+
+      it('should update podcast title', () => {
+        const updatePodcastQuery = `
+          mutation {
+            updatePodcast(input: { id: 1, payload: { title: "${newTitle}" } }) {
+              ok
+              error
+            }
+          }        
+        `;
+
+        return requestGraphql(app, updatePodcastQuery)
+          .expect(200)
+          .expect(req => {
+            const {
+              data: {
+                updatePodcast: { ok, error },
+              },
+            } = req.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should have a new podcast title', () => {
+        return requestGraphql(app, getPodcastQuery(insertPodcastId))
+          .expect(200)
+          .expect(req => {
+            const {
+              data: {
+                getPodcast: { podcast },
+              },
+            } = req.body;
+
+            expect(podcast.id).toBe(insertPodcastId);
+            expect(podcast.title).toBe(newTitle);
+          });
+      });
+    });
+
+    describe('createEpisode', () => {
+      const createEpisodeQuery = (id: number) => `
+        mutation {
+          createEpisode(input: { title: "${testEpisode.title}", category: "${testEpisode.category}", podcastId: ${id} }) {
+            id
+            error
+            ok
+          }
+        }
+      `;
+
+      it('should create episode in podcast', () => {
+        return requestGraphql(app, createEpisodeQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                createEpisode: { id, error, ok },
+              },
+            } = res.body;
+
+            expect(id).toBe(1);
+            insertEpisodeId = id;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should find new episode in podcast', () => {
+        return requestGraphql(app, getPodcastQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getPodcast: {
+                  podcast: { episodes },
+                },
+              },
+            } = res.body;
+
+            const [episode] = episodes;
+
+            expect(episode.id).toBe(insertEpisodeId);
+            expect(episode.title).toBe(testEpisode.title);
+            expect(episode.category).toBe(testEpisode.category);
+          });
+      });
+    });
+
+    describe('getEpisodes', () => {
+      it('should return episodes', () => {
+        return requestGraphql(app, getEpisodesQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getEpisodes: { ok, error, episodes },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+            expect(episodes).toHaveLength(1);
+          });
+      });
+
+      it('should fail if podcast id is wrong', () => {
+        const wrongId = 2;
+
+        return requestGraphql(app, getEpisodesQuery(wrongId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getEpisodes: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeFalsy();
+            expect(error).toBe(`Podcast with id ${wrongId} not found`);
+          });
+      });
+    });
+
+    describe('updateEpisode', () => {
+      const updateEpisodeParams = {
+        title: 'e2e-test',
+        category: 'testing',
+      };
+
+      const updateEpisodeQuery = (
+        podcastId: number,
+        episodeId: number,
+        { title, category },
+      ) => `
+        mutation {
+          updateEpisode(
+            input: { podcastId: ${podcastId}, episodeId: ${episodeId}, title: "${title}", category: "${category}" }
+          ) {
+            ok
+            error
+          }
+        }
+      `;
+
+      it('should update episode', () => {
+        return requestGraphql(
+          app,
+          updateEpisodeQuery(
+            insertPodcastId,
+            insertEpisodeId,
+            updateEpisodeParams,
+          ),
+        )
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                updateEpisode: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should check updated episode', () => {
+        return requestGraphql(app, getEpisodesQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getEpisodes: { episodes },
+              },
+            } = res.body;
+
+            const [episode] = episodes;
+
+            expect(episode.title).toBe(updateEpisodeParams.title);
+            expect(episode.category).toBe(updateEpisodeParams.category);
+          });
+      });
+    });
+
+    describe('deleteEpisode', () => {
+      const deleteEpisodeQuery = (podcastId, episodeId) => `
+        mutation {
+          deleteEpisode(input: { podcastId: ${podcastId}, episodeId: ${episodeId} }) {
+            ok
+            error
+          }
+        }
+      `;
+
+      it('should delete episode', () => {
+        return requestGraphql(
+          app,
+          deleteEpisodeQuery(insertPodcastId, insertEpisodeId),
+        )
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                deleteEpisode: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should check if episode is deleted', () => {
+        return requestGraphql(app, getEpisodesQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getEpisodes: { episodes },
+              },
+            } = res.body;
+
+            expect(episodes).toHaveLength(0);
+          });
+      });
+    });
+
+    describe('deletePodcast', () => {
+      const deletePodcastQuery = (id: number) => `
+        mutation {
+          deletePodcast(input: { id: ${id} }) {
+            ok
+            error
+          }
+        }`;
+
+      it('should delete podcast', () => {
+        return requestGraphql(app, deletePodcastQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                deletePodcast: { ok, error },
+              },
+            } = res.body;
+
+            expect(ok).toBeTruthy();
+            expect(error).toBeNull();
+          });
+      });
+
+      it('should check if podcast is deleted', () => {
+        return requestGraphql(app, getPodcastQuery(insertPodcastId))
+          .expect(200)
+          .expect(res => {
+            const {
+              data: {
+                getPodcast: { ok, error, podcast },
+              },
+            } = res.body;
+
+            expect(ok).toBeFalsy();
+            expect(error).toBe(`Podcast with id ${insertPodcastId} not found`);
+            expect(podcast).toBeNull();
+          });
+      });
+    });
   });
   describe('Users Resolver', () => {
-    it.todo('me');
-    it.todo('seeProfile');
-    it.todo('createAccount');
-    it.todo('login');
-    it.todo('editProfile');
+    describe('me', () => {});
+
+    describe('seeProfile', () => {});
+
+    describe('createAccount', () => {});
+
+    describe('login', () => {});
+
+    describe('editProfile', () => {});
   });
 });
